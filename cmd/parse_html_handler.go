@@ -188,7 +188,10 @@ func consumeInternalLinks(u *url.URL, links map[string]map[string]struct{}) []st
 func JSON(out http.ResponseWriter, payload interface{}, status int) {
 	b, err := json.Marshal(payload)
 	if err != nil {
-		panic(err) // handle err return 500 codd
+		out.WriteHeader(http.StatusInternalServerError)
+		if _, err := out.Write([]byte(err.Error())); err != nil {
+			log.Printf("JSON: failed to write response: %v", err)
+		}
 	}
 
 	out.Header().Set("content-type", "application/json")
