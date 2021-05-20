@@ -17,13 +17,22 @@ import (
 
 // HTML versions
 const (
-	Version5   = "5"
-	Version401 = "4.01"
-	Version4   = "4.0"
-	Version32  = "3.2"
-	Version3   = "3.0"
-	Version2   = "2.0"
-	Older      = "<2.0"
+	Version5    = "5"
+	Version4_01 = "4.01"
+	Version4_0  = "4.0"
+	Version3_2  = "3.2"
+	Version3_0  = "3.0"
+	Version2_0  = "2.0"
+	LessThan2_0 = "<2.0"
+)
+
+// HTML versions regexes
+var (
+	reVersion4_01 = regexp.MustCompile(" (?i)HTML 4.01")
+	reVersion4_0  = regexp.MustCompile(" (?i)HTML 4.0")
+	reVersion3_2  = regexp.MustCompile(" (?i)HTML 3.2")
+	reVersion3_0  = regexp.MustCompile(" (?i)HTML 3.0")
+	reVersion2_0  = regexp.MustCompile(" (?i)HTML 2.0")
 )
 
 // InvalidLink represents an inaccessible link
@@ -54,15 +63,15 @@ type PageContents struct {
 func Page(page io.Reader) (*PageContents, error) {
 	root, err := html.Parse(page)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("inspect.Page: unexpected parse error: %w", err)
 	}
 
-	p := newPageContents()
-	if err := p.traversePage(root); err != nil {
-		return nil, err
+	pc := newPageContents()
+	if err := pc.traversePage(root); err != nil {
+		return nil, fmt.Errorf("inspect.Page: unexpected error: %w", err)
 	}
 
-	return p, nil
+	return pc, nil
 }
 
 // newPageContents creates a default initialized *PageContents.
@@ -82,7 +91,7 @@ func (p *PageContents) traversePage(node *html.Node) error {
 	case html.DoctypeNode:
 		p.extractVersion(node)
 	case html.ElementNode:
-		if node.Data == "title" {
+		if strings.ToLower(node.Data) == "title" {
 			if node.FirstChild != nil {
 				p.Title = node.FirstChild.Data
 			}
@@ -92,9 +101,9 @@ func (p *PageContents) traversePage(node *html.Node) error {
 			p.Headings[node.Data]++
 		}
 
-		if node.Data == "a" {
+		if strings.ToLower(node.Data) == "a" {
 			for i := 0; i < len(node.Attr); i++ {
-				if node.Attr[i].Key == "href" {
+				if strings.ToLower(node.Attr[i].Key) == "href" {
 					// href values can contain:
 					// 1. full urls
 					// 2. relative urls
@@ -102,28 +111,28 @@ func (p *PageContents) traversePage(node *html.Node) error {
 
 					u, err := url.Parse(node.Attr[i].Val)
 					if err != nil {
-						return err
+						return fmt.Errorf("unable to parse URL %q: %w", node.Attr[i].Val, err)
 					}
 
 					if p.Links[u.Hostname()] == nil {
 						p.Links[u.Hostname()] = make(map[string]struct{})
 					}
 
-					// relative ulrs will have an empty hostname
+					// relative URLS will have an empty hostname
 					p.Links[u.Hostname()][node.Attr[i].Val] = struct{}{}
 				}
 			}
 		}
 
 		// we can check for a login form with an <input type="password">
-		if node.Data == "input" {
+		if strings.ToLower(node.Data) == "input" {
 			for i := 0; i < len(node.Attr); i++ {
-				if node.Attr[i].Key == "type" && node.Attr[i].Val == "password" {
+				if strings.ToLower(node.Attr[i].Key) == "type" && strings.ToLower(node.Attr[i].Val) == "password" {
 					// traverse back the tree to check for a form.
 					insideForm := false
 
 					for p := node.Parent; p != nil; p = p.Parent {
-						if p.Data == "form" {
+						if strings.ToLower(p.Data) == "form" {
 							insideForm = true
 							break
 						}
@@ -141,7 +150,7 @@ func (p *PageContents) traversePage(node *html.Node) error {
 
 	for c := node.FirstChild; c != nil; c = c.NextSibling {
 		if err := p.traversePage(c); err != nil {
-			return err
+			return fmt.Errorf("inspect.traversePage: %w", err)
 		}
 	}
 
@@ -150,42 +159,43 @@ func (p *PageContents) traversePage(node *html.Node) error {
 
 // extractVersion extract the HTML version from a DocType HTML Node.
 func (p *PageContents) extractVersion(node *html.Node) {
-	p.Version = Older
+	p.Version = LessThan2_0
 
 	if len(node.Attr) == 0 {
 		// <!DOCTYPE html>
 		p.Version = Version5
-	} else {
-		for i := 0; i < len(node.Attr); i++ {
-			// <!DOCTYPE html ... HTML 4.01 ...>
-			if re := regexp.MustCompile(" (?i)HTML 4.01"); re.MatchString(node.Attr[i].Val) {
-				p.Version = Version401
-				break
-			}
+		return
+	}
 
-			// <!DOCTYPE html ... HTML 4.0 ...>
-			if re := regexp.MustCompile(" (?i)HTML 4.0"); re.MatchString(node.Attr[i].Val) {
-				p.Version = Version4
-				break
-			}
+	for i := 0; i < len(node.Attr); i++ {
+		// <!DOCTYPE html ... HTML 4.01 ...>
+		if reVersion4_01.MatchString(node.Attr[i].Val) {
+			p.Version = Version4_01
+			break
+		}
 
-			// <!DOCTYPE html ... HTML 3.2 ...>
-			if re := regexp.MustCompile(" (?i)HTML 3.2"); re.MatchString(node.Attr[i].Val) {
-				p.Version = Version32
-				break
-			}
+		// <!DOCTYPE html ... HTML 4.0 ...>
+		if reVersion4_0.MatchString(node.Attr[i].Val) {
+			p.Version = Version4_0
+			break
+		}
 
-			// <!DOCTYPE html ... HTML 3.0 ...>
-			if re := regexp.MustCompile(" (?i)HTML 3.0"); re.MatchString(node.Attr[i].Val) {
-				p.Version = Version3
-				break
-			}
+		// <!DOCTYPE html ... HTML 3.2 ...>
+		if reVersion3_2.MatchString(node.Attr[i].Val) {
+			p.Version = Version3_2
+			break
+		}
 
-			// <!DOCTYPE html ... HTML 2.0 ...>
-			if re := regexp.MustCompile(" (?i)HTML 2.0"); re.MatchString(node.Attr[i].Val) {
-				p.Version = Version2
-				break
-			}
+		// <!DOCTYPE html ... HTML 3.0 ...>
+		if reVersion3_0.MatchString(node.Attr[i].Val) {
+			p.Version = Version3_0
+			break
+		}
+
+		// <!DOCTYPE html ... HTML 2.0 ...>
+		if reVersion2_0.MatchString(node.Attr[i].Val) {
+			p.Version = Version2_0
+			break
 		}
 	}
 }
@@ -194,14 +204,14 @@ func (p *PageContents) extractVersion(node *html.Node) {
 // accessible. For relative links the baseURL parameter will be use to
 // create a full URL.
 func (p *PageContents) InvalidLinks(baseURL url.URL) map[string][]InvalidLink {
-	type pair struct {
+	type data struct {
 		Domain string
 		Link   InvalidLink
 	}
 
 	var (
 		out = make(map[string][]InvalidLink)
-		ch  = make(chan pair)
+		ch  = make(chan data)
 
 		wg = new(sync.WaitGroup)
 	)
@@ -220,12 +230,12 @@ func (p *PageContents) InvalidLinks(baseURL url.URL) map[string][]InvalidLink {
 
 			for link := range links {
 				if relative { // relative urls
-					link = combine(baseURL.String(), link)
+					link = Combine(baseURL.String(), link)
 				}
 
 				resp, err := http.Get(link)
 				if err != nil {
-					ch <- pair{
+					ch <- data{
 						Domain: domain,
 						Link: InvalidLink{
 							URL:    link,
@@ -235,12 +245,11 @@ func (p *PageContents) InvalidLinks(baseURL url.URL) map[string][]InvalidLink {
 
 					continue
 				}
-
-				defer resp.Body.Close()
+				resp.Body.Close()
 
 				// server is having issues and the page is unreachable
 				if resp.StatusCode >= 500 && resp.StatusCode < 600 {
-					ch <- pair{
+					ch <- data{
 						Domain: domain,
 						Link: InvalidLink{
 							URL:    link,
@@ -265,10 +274,15 @@ func (p *PageContents) InvalidLinks(baseURL url.URL) map[string][]InvalidLink {
 }
 
 func isHeading(s string) bool {
-	return s == "h1" || s == "h2" || s == "h3" || s == "h4" || s == "h5" || s == "h6"
+	switch s {
+	case "h1", "h2", "h3", "h4", "h5", "h6":
+		return true
+	}
+
+	return false
 }
 
-func combine(base, relative string) string {
+func Combine(base, relative string) string {
 	if strings.HasPrefix(relative, "/") && strings.HasSuffix(base, "/") {
 		return base[:len(base)-1] + relative
 	}

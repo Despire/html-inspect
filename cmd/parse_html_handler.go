@@ -11,7 +11,6 @@ import (
 	"log"
 	"net/http"
 	"net/url"
-	"strings"
 
 	"github.com/Despire/htmlinspect/inspect"
 )
@@ -50,7 +49,14 @@ type ParseHTMLResponse struct {
 	Inaccessible []InvalidLink `json:"inaccessible"`
 }
 
+// parseHTML returns a handler post spec.
 func parseHtml() http.HandlerFunc {
+	// This method will extract general information from a HTML page.
+	//
+	// Responses:
+	//	200: ParseHTMLResponse.
+	//	400: Invalid Request payload.
+	//	500: Server failure.
 	return func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("content-type") != "application/json" {
 			JSONError(w, "Invalid content-type", http.StatusBadRequest)
@@ -164,11 +170,7 @@ func consumeInternalLinks(u *url.URL, links map[string]map[string]struct{}) []st
 
 	// relative links are internal.
 	for l := range links[""] {
-		if u := u.String(); strings.HasSuffix(u, "/") && strings.HasPrefix(l, "/") {
-			out = append(out, u[:len(u)-1]+l)
-		} else {
-			out = append(out, u+l)
-		}
+		out = append(out, inspect.Combine(u.String(), l))
 	}
 
 	// check also for links using the full URL.
@@ -186,14 +188,14 @@ func consumeInternalLinks(u *url.URL, links map[string]map[string]struct{}) []st
 func JSON(out http.ResponseWriter, payload interface{}, status int) {
 	b, err := json.Marshal(payload)
 	if err != nil {
-		panic(err)
+		panic(err) // handle err return 500 codd
 	}
 
 	out.Header().Set("content-type", "application/json")
 	out.WriteHeader(status)
 
 	if _, err := out.Write(b); err != nil {
-		panic(err)
+		log.Printf("JSON: failed to write response: %v", err)
 	}
 }
 
@@ -208,10 +210,16 @@ func JSONError(out http.ResponseWriter, msg string, status int) {
 
 	b, err := json.Marshal(&s)
 	if err != nil {
-		panic(err)
+		out.WriteHeader(http.StatusInternalServerError)
+
+		if _, err := out.Write([]byte(err.Error())); err != nil {
+			log.Printf("JSONError: marshal payload failed: %v", err)
+		}
+
+		return
 	}
 
 	if _, err := out.Write(b); err != nil {
-		panic(err)
+		log.Printf("JSONError: failed to write response: %v", err)
 	}
 }

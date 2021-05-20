@@ -186,8 +186,8 @@ func TestParseHTML(t *testing.T) {
 				return
 			}
 
-			if !cmp.Equal(string(b), string(tt.wantBody)) {
-				t.Errorf("parseHtml() response = %v \n want: %v", string(b), string(tt.wantBody))
+			if diff := cmp.Diff(string(b), string(tt.wantBody)); diff != "" {
+				t.Error(diff)
 				return
 			}
 		})

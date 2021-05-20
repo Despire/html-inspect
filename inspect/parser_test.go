@@ -54,10 +54,10 @@ func TestCombine(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
-			have := combine(tt.args.base, tt.args.relative)
+			have := Combine(tt.args.base, tt.args.relative)
 
-			if have != tt.want {
-				t.Errorf("inspect.combine(%v, %v) = %v, want %v", tt.args.base, tt.args.relative, have, tt.want)
+			if diff := cmp.Diff(have, tt.want); diff != "" {
+				t.Error(diff)
 				return
 			}
 		})
@@ -94,7 +94,7 @@ func TestExtractVersion(t *testing.T) {
 					},
 				},
 			},
-			wantVersion: Version401,
+			wantVersion: Version4_01,
 		},
 		{
 			Name: "ok-version4",
@@ -108,7 +108,7 @@ func TestExtractVersion(t *testing.T) {
 					},
 				},
 			},
-			wantVersion: Version4,
+			wantVersion: Version4_0,
 		},
 		{
 			Name: "ok-version32",
@@ -122,7 +122,7 @@ func TestExtractVersion(t *testing.T) {
 					},
 				},
 			},
-			wantVersion: Version32,
+			wantVersion: Version3_2,
 		},
 		{
 			Name: "ok-version3",
@@ -136,7 +136,7 @@ func TestExtractVersion(t *testing.T) {
 					},
 				},
 			},
-			wantVersion: Version3,
+			wantVersion: Version3_0,
 		},
 		{
 			Name: "ok-version2",
@@ -150,7 +150,7 @@ func TestExtractVersion(t *testing.T) {
 					},
 				},
 			},
-			wantVersion: Version2,
+			wantVersion: Version2_0,
 		},
 		{
 			Name: "ok-version-older",
@@ -164,17 +164,17 @@ func TestExtractVersion(t *testing.T) {
 					},
 				},
 			},
-			wantVersion: Older,
+			wantVersion: LessThan2_0,
 		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
-			c := newPageContents()
-			c.extractVersion(tt.args.node)
+			pc := newPageContents()
+			pc.extractVersion(tt.args.node)
 
-			if c.Version != tt.wantVersion {
-				t.Errorf("PageContents.Version = %v, want: %v", c.Version, tt.wantVersion)
+			if diff := cmp.Diff(pc.Version, tt.wantVersion); diff != "" {
+				t.Error(diff)
 				return
 			}
 		})
@@ -585,15 +585,15 @@ func TestTraversePage(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.Name, func(t *testing.T) {
-			c := newPageContents()
+			pc := newPageContents()
 
-			if err := c.traversePage(tt.args.node); (err != nil) != tt.wantErr {
+			if err := pc.traversePage(tt.args.node); (err != nil) != tt.wantErr {
 				t.Errorf("traversePage() err = %v, want %v", err, tt.wantErr)
 				return
 			}
 
-			if !cmp.Equal(c, tt.wantContents) {
-				t.Errorf("have: %+v, want: %+v", *c, tt.wantContents)
+			if diff := cmp.Diff(pc, tt.wantContents); diff != "" {
+				t.Error(diff)
 				return
 			}
 		})
@@ -724,8 +724,8 @@ func TestPage(t *testing.T) {
 				return
 			}
 
-			if !cmp.Equal(have, tt.wantContents) {
-				t.Errorf("PageContantes = %+v want: %+v", have, tt.wantContents)
+			if diff := cmp.Diff(have, tt.wantContents); diff != "" {
+				t.Error(diff)
 				return
 			}
 		})
@@ -773,7 +773,6 @@ func TestInvalidLinks(t *testing.T) {
 			Contents: &PageContents{
 				Links: map[string]map[string]struct{}{
 					"": {
-						"#":         struct{}{},
 						"/relative": struct{}{},
 					},
 				},
@@ -782,12 +781,8 @@ func TestInvalidLinks(t *testing.T) {
 			Want: map[string][]InvalidLink{
 				"": {
 					{
-						URL:    "www.foobar#",
-						Reason: "Get \"www.foobar\": unsupported protocol scheme \"\"",
-					},
-					{
 						URL:    "www.foobar/relative",
-						Reason: "Get \"www.foobar/relative\": unsupported protocol scheme \"\"",
+						Reason: `Get "www.foobar/relative": unsupported protocol scheme ""`,
 					},
 				},
 			},
@@ -842,8 +837,8 @@ func TestInvalidLinks(t *testing.T) {
 		t.Run(tt.Name, func(t *testing.T) {
 			have := tt.Contents.InvalidLinks(*tt.args.url)
 
-			if !cmp.Equal(have, tt.Want) {
-				t.Errorf("PageContents.InvalidLink() = %v, want = %v", have, tt.Want)
+			if diff := cmp.Diff(have, tt.Want); diff != "" {
+				t.Error(diff)
 				return
 			}
 		})
