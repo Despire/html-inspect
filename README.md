@@ -2,12 +2,6 @@
 
 Extract general information about the HTML page.
 
-## How to run
-
-```
-    make run
-```
-
 ## Example
 
 In terminal 1
